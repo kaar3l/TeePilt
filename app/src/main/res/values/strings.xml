@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">TeePilt</string>
+    <string name="preview_area">preview_area</string>
+    <string name="capture">Capture</string>
+</resources>

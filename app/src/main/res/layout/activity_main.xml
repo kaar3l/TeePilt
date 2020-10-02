@@ -1,0 +1,83 @@
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF000000">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginBottom="8dp"
+        android:contentDescription="@string/preview_area"
+        android:importantForAccessibility="no"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" >
+
+    </androidx.camera.view.PreviewView>
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/textView"
+            android:layout_width="match_parent"
+            android:layout_height="100dp"
+            android:text=""
+            android:textColor="#F00"
+            tools:text="test" />
+
+        <androidx.cardview.widget.CardView
+            android:layout_alignParentRight="true"
+            android:layout_centerVertical="true"
+            android:id="@+id/capture"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:layout_weight="1"
+            app:cardBackgroundColor="#ffffff"
+            app:cardCornerRadius="25dp"
+            tools:ignore="MissingConstraints"
+            android:gravity="right">
+
+            <ImageView
+                android:id="@+id/captureImg"
+                android:layout_width="100dp"
+                android:layout_height="match_parent"
+                android:contentDescription="Capture"
+                android:src="@mipmap/ic_capture"
+                android:gravity="right"/>
+
+        </androidx.cardview.widget.CardView>
+
+        <androidx.cardview.widget.CardView
+            android:visibility="invisible"
+            android:layout_alignParentRight="true"
+            android:layout_alignParentBottom="true"
+            android:id="@+id/gallery"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:layout_weight="1"
+            app:cardBackgroundColor="#ffffff"
+            app:cardCornerRadius="25dp"
+            tools:ignore="MissingConstraints"
+            android:gravity="right">
+
+            <ImageView
+                android:id="@+id/openGallery"
+                android:layout_width="100dp"
+                android:layout_height="match_parent"
+                android:contentDescription="Gallery"
+                android:src="@mipmap/ic_gallery"
+                android:gravity="right"/>
+
+        </androidx.cardview.widget.CardView>
+
+
+    </RelativeLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

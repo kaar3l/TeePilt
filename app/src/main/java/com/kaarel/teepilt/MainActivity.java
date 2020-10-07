@@ -24,6 +24,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.PorterDuff;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -33,9 +34,11 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.ToggleButton;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
@@ -52,13 +55,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 
 //TODO
-//Asynctask jääb peale programmi kinni panekut ikka käima taustale. Peaks kuidagi killima. Asynctask võiks siis käia kui progre käib.
+//Thread, mis update'b textviewd jääb taustale tööle. Kuidagi tuleks see ära fixida.
 
 public class MainActivity extends AppCompatActivity {
 
@@ -82,7 +89,9 @@ public class MainActivity extends AppCompatActivity {
     ImageView captureImage;
     ImageView galleryImage;
 
-    @SuppressLint("WrongConstant")
+    int countDown=3;
+
+        @SuppressLint("WrongConstant")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
@@ -95,6 +104,8 @@ public class MainActivity extends AppCompatActivity {
         galleryImage = findViewById(R.id.openGallery);
 
         textView = (TextView) findViewById(R.id.textView);
+
+        ToggleButton toggle = (ToggleButton) findViewById(R.id.toggleButton);
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         listener = new LocationListener() {
@@ -143,7 +154,6 @@ public class MainActivity extends AppCompatActivity {
             }
             locationManager.requestLocationUpdates("gps", 2, 10, listener);
 
-
             // See thread uuendab textviews koordinaate 1 seci tagant
             Thread updateTextview = new Thread() {
 
@@ -170,6 +180,43 @@ public class MainActivity extends AppCompatActivity {
         } else {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS);
         }
+
+            final boolean[] isThreadAllowed = {true};
+            toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+
+                    Thread autocapture = new Thread() {
+                        @Override
+                        public void run() {
+                            while (isThreadAllowed[0]) { // Exit when thread's interrupt flag is set
+                                try {
+                                    Thread.sleep(3000);
+                                    System.out.println("CAMERA!!!");
+                                    shoot();
+                                    //bindPreview(captureImage);
+                                } catch (InterruptedException ex) {
+                                    System.out.println("CAMERA EXIT!!!");
+                                     Thread.currentThread().interrupt();
+                                }
+                            }
+                        }
+                    };
+
+                    if (isChecked) {
+                        // The toggle is enabled
+                        toggle.setText("ON");
+                        Toast.makeText(MainActivity.this, "Automaatne salvestus algas", Toast.LENGTH_SHORT).show();
+                        isThreadAllowed[0] =true;
+                        autocapture.start();
+
+                    } else {
+                        // The toggle is disabled
+                        toggle.setText("OFF");
+                        Toast.makeText(MainActivity.this, "Automaatne salvestus lõpes", Toast.LENGTH_SHORT).show();
+                        isThreadAllowed[0] =false;
+                    }
+                }
+            });
     }
 
     //Koordinaatide ümardamine:
@@ -240,20 +287,29 @@ public class MainActivity extends AppCompatActivity {
 
         Camera camera = cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview, imageAnalysis, imageCapture);
 
+        //Kaamera nupu vajutamisel:
         captureImage.setOnClickListener(v -> {
 
-            //SimpleDateFormat mDateFormat = new SimpleDateFormat("yyyyMMddHHmmss", Locale.US);
-            //File file = new File(getBatchDirectoryName(), mDateFormat.format(new Date()) + ".jpg");
-
-            //ImageCapture.OutputFileOptions outputFileOptions = new ImageCapture.OutputFileOptions.Builder(file).build();
+            captureImage.setColorFilter(Color.GRAY, PorterDuff.Mode.MULTIPLY);
 
             imageCapture.takePicture(executor, new ImageCapture.OnImageCapturedCallback(){
                 public void onCaptureSuccess(ImageProxy image){
                     Bitmap bitmap = convertImageProxyToBitmap(image);
                     writeRoadDataAndTimeAndSave(bitmap);
+                    captureImage.clearColorFilter();
+                    image.close();
                 }
             });
 
+        });
+    }
+
+    void shoot(){
+        new Handler(Looper.getMainLooper()).post(new Runnable(){
+            @Override
+            public void run() {
+                captureImage.performClick();
+            }
         });
     }
 

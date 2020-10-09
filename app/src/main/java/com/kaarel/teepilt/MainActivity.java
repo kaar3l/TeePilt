@@ -34,6 +34,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.view.KeyEvent;
 import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -225,6 +226,21 @@ public class MainActivity extends AppCompatActivity {
         double roundedLongCoordinate = Math.round(longCoordinate);
         double roundedCoordinate = roundedLongCoordinate / 100000;
         return roundedCoordinate;
+    }
+
+    //Back nupu vajutamisel:
+    @Override
+    public void onBackPressed() {
+        finish();
+        super.onBackPressed();
+    }
+
+    // Programmi kinni panekul läheks asi täiesti kinni
+    @Override
+    public void onDestroy()
+    {
+        android.os.Process.killProcess(android.os.Process.myPid());
+        super.onDestroy();
     }
 
     //Aeg stringina

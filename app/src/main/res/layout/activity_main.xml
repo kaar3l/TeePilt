@@ -28,9 +28,10 @@
 
         <ToggleButton
             android:id="@+id/toggleButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="35dp"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:background="@drawable/rounded_corners"
+            android:textSize="25dp"
             android:text="ToggleButton"
             android:padding="20dp"
             android:layout_alignParentRight="true"
@@ -51,16 +52,18 @@
             android:layout_width="100dp"
             android:layout_height="100dp"
             android:layout_weight="1"
-            app:cardBackgroundColor="#ffffff"
+            app:cardBackgroundColor="#80FFFFFF"
             app:cardCornerRadius="25dp"
             tools:ignore="MissingConstraints"
-            android:gravity="right">
+            android:gravity="right"
+            android:background="#80FFFFFF">
 
 
 
             <ImageView
                 android:id="@+id/captureImg"
                 android:layout_width="100dp"
+                android:background="#80FFFFFF"
                 android:layout_height="match_parent"
                 android:contentDescription="Capture"
                 android:src="@mipmap/ic_capture"
@@ -90,7 +93,5 @@
                 android:gravity="right"/>
 
         </androidx.cardview.widget.CardView>
-
-
     </RelativeLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>

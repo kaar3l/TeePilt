@@ -172,24 +172,31 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         mainHandler.post(updateTextViewRunnable);
+        if (allPermissionsGranted()) {
+            startGps();
+        }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         mainHandler.removeCallbacks(updateTextViewRunnable);
+        locationManager.removeUpdates(locationListener);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        locationManager.removeUpdates(locationListener);
     }
 
     @SuppressWarnings("MissingPermission")
+    private void startGps() {
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 0, locationListener);
+    }
+
     private void startCameraAndGps() {
         startCamera();
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 10, locationListener);
+        startGps();
     }
 
     private void loadRoadLocation(double lat, double lon) {

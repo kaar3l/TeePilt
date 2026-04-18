@@ -245,45 +245,10 @@ public class MainActivity extends AppCompatActivity {
     }*/
 
     private String[] parseRoadData(String content) {
-        String[] lines = content.split("\\r?\\n");
-        List<String> teeHtmlRaw = new ArrayList<>();
-        String infoRida = lines[0];
-        /*
-        int meetrigaRida = 0;
-        boolean meetrigaRidaOlemas = false;
-        String kilomeeterPunktiga = "";
-
-        for (int i = 0; i < lines.length; i++) {
-            teeHtmlRaw.add(lines[i]);
-            if (lines[i].startsWith("Meeter")) {
-                meetrigaRida = i;
-                meetrigaRidaOlemas = true;
-            }
-        }
-
-        if (meetrigaRidaOlemas) {
-            String[] pooleks = teeHtmlRaw.get(meetrigaRida).split(",");
-            String meetritesStr = pooleks[0].replaceAll("[^0-9]+", "");
-            if (meetritesStr.matches(".*\\d.*")) {
-                float km = Float.parseFloat(meetritesStr) / 1000;
-                kilomeeterPunktiga = Float.toString(km).replace('.', ',');
-            }
-        }
-
-        String roadNumber = teeHtmlRaw.get(0).replaceAll("\\D+", "");
-        String roadName = teeHtmlRaw.get(0).replaceAll("\\d", "").replace("Tee  ", "");
-        String roadLocation = teeHtmlRaw.get(teeHtmlRaw.size() - 1);
-
-        return new String[]{
-                "Tee " + roadNumber + " km " + kilomeeterPunktiga + " " + roadName + " " + roadLocation,
-                "Tee " + roadNumber + " km " + kilomeeterPunktiga
-        };
-        */
-        //return infoRida;
-        return new String[]{
-                infoRida,
-                "Tee " + "roadNumber" + " km " + "kilomeeterPunktiga"
-        };
+        String[] parts = content.split("\\r?\\n", 2);
+        String infoRida = parts[0].trim();
+        String infoRida2 = parts.length > 1 ? parts[1].trim() : "";
+        return new String[]{infoRida, infoRida2};
     }
     private String fetchRoadPageContent(String url) throws IOException {
         Document doc = Jsoup.connect(url)

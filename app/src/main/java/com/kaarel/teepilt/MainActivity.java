@@ -37,7 +37,7 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
-import android.widget.ImageView;
+import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -80,8 +80,8 @@ public class MainActivity extends AppCompatActivity {
     private volatile String locationOnRoadSimple = "";
 
     private PreviewView mPreviewView;
-    private ImageView captureImage;
-    private ImageView galleryImage;
+    private View captureImage;
+    private View galleryImage;
     private Camera camera;
     private ScaleGestureDetector scaleGestureDetector;
     private Uri lastSavedUri = null;
@@ -89,7 +89,8 @@ public class MainActivity extends AppCompatActivity {
     private final Runnable updateTextViewRunnable = new Runnable() {
         @Override
         public void run() {
-            textView.setText(locationOnRoad + "\n" + String.format(Locale.US, "%.2f, %.2f  ", myLatitude, myLongitude) +"/ "+ getDate());
+            textView.setText(locationOnRoad + "\n" + String.format(Locale.US, "%.2f, %.2f  ", myLatitude, myLongitude) +"/" +
+                    " "+ getDate());
             mainHandler.postDelayed(this, 1000);
         }
     };

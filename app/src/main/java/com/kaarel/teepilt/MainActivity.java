@@ -81,8 +81,10 @@ public class MainActivity extends AppCompatActivity {
 
     private PreviewView mPreviewView;
     private ImageView captureImage;
+    private ImageView galleryImage;
     private Camera camera;
     private ScaleGestureDetector scaleGestureDetector;
+    private Uri lastSavedUri = null;
 
     private final Runnable updateTextViewRunnable = new Runnable() {
         @Override
@@ -120,7 +122,19 @@ public class MainActivity extends AppCompatActivity {
 
         mPreviewView = findViewById(R.id.previewView);
         captureImage = findViewById(R.id.captureImg);
+        galleryImage = findViewById(R.id.openGallery);
         textView = findViewById(R.id.textView);
+
+        galleryImage.setOnClickListener(v -> {
+            if (lastSavedUri != null) {
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(lastSavedUri, "image/jpeg");
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivity(intent);
+            } else {
+                Toast.makeText(this, "Pilti pole veel tehtud", Toast.LENGTH_SHORT).show();
+            }
+        });
 
         scaleGestureDetector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
             @Override
@@ -410,6 +424,7 @@ public class MainActivity extends AppCompatActivity {
                 values.clear();
                 values.put(MediaStore.Images.Media.IS_PENDING, 0);
                 getContentResolver().update(uri, values, null, null);
+                lastSavedUri = uri;
                 mainHandler.post(() ->
                     Toast.makeText(this, "Salvestasin pildi: DCIM/TeePilt/" + filename, Toast.LENGTH_SHORT).show()
                 );
@@ -423,6 +438,7 @@ public class MainActivity extends AppCompatActivity {
             File outputFile = new File(dir, filename);
             try (FileOutputStream fos = new FileOutputStream(outputFile)) {
                 dest.compress(Bitmap.CompressFormat.JPEG, 90, fos);
+                lastSavedUri = Uri.fromFile(outputFile);
                 mainHandler.post(() ->
                     Toast.makeText(this, "Salvestasin pildi: " + outputFile.getPath(), Toast.LENGTH_SHORT).show()
                 );

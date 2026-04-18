@@ -10,20 +10,17 @@
         android:id="@+id/previewView"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginBottom="8dp"
         android:contentDescription="@string/preview_area"
         android:importantForAccessibility="no"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" >
-
-    </androidx.camera.view.PreviewView>
+        app:layout_constraintTop_toTopOf="parent" />
 
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:fitsSystemWindows="true">
 
         <TextView
             android:id="@+id/textView"
@@ -34,50 +31,45 @@
             tools:text="test" />
 
         <androidx.cardview.widget.CardView
-            android:layout_alignParentRight="true"
-            android:layout_centerVertical="true"
             android:id="@+id/capture"
             android:layout_width="100dp"
             android:layout_height="100dp"
-            android:layout_weight="1"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:layout_marginEnd="8dp"
             app:cardBackgroundColor="#ffffff"
             app:cardCornerRadius="25dp"
-            tools:ignore="MissingConstraints"
-            android:gravity="right">
+            tools:ignore="MissingConstraints">
 
             <ImageView
                 android:id="@+id/captureImg"
-                android:layout_width="100dp"
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:contentDescription="Capture"
-                android:src="@mipmap/ic_capture"
-                android:gravity="right"/>
+                android:src="@mipmap/ic_capture" />
 
         </androidx.cardview.widget.CardView>
 
         <androidx.cardview.widget.CardView
-            android:visibility="invisible"
-            android:layout_alignParentRight="true"
-            android:layout_alignParentBottom="true"
             android:id="@+id/gallery"
             android:layout_width="100dp"
             android:layout_height="100dp"
-            android:layout_weight="1"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentBottom="true"
+            android:layout_marginEnd="8dp"
+            android:layout_marginBottom="8dp"
             app:cardBackgroundColor="#ffffff"
             app:cardCornerRadius="25dp"
-            tools:ignore="MissingConstraints"
-            android:gravity="right">
+            tools:ignore="MissingConstraints">
 
             <ImageView
                 android:id="@+id/openGallery"
-                android:layout_width="100dp"
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:contentDescription="Gallery"
-                android:src="@mipmap/ic_gallery"
-                android:gravity="right"/>
+                android:src="@mipmap/ic_gallery" />
 
         </androidx.cardview.widget.CardView>
-
 
     </RelativeLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>

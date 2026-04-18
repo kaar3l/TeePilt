@@ -2,13 +2,10 @@ package com.kaarel.teepilt;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
-import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageCapture;
 import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
-import androidx.camera.extensions.HdrImageCaptureExtender;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.app.ActivityCompat;
@@ -16,7 +13,6 @@ import androidx.core.content.ContextCompat;
 import androidx.lifecycle.LifecycleOwner;
 
 import android.Manifest;
-import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -27,7 +23,6 @@ import android.graphics.Paint;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -40,13 +35,11 @@ import android.widget.Toast;
 import com.google.common.util.concurrent.ListenableFuture;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -57,277 +50,337 @@ import java.util.concurrent.Executors;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 
-//TODO
-//Asynctask jääb peale programmi kinni panekut ikka käima taustale. Peaks kuidagi killima. Asynctask võiks siis käia kui progre käib.
-
 public class MainActivity extends AppCompatActivity {
 
-    private Executor executor = Executors.newSingleThreadExecutor();
-    private int REQUEST_CODE_PERMISSIONS = 1001;
-    private final String[] REQUIRED_PERMISSIONS = new String[]{"android.permission.CAMERA", "android.permission.WRITE_EXTERNAL_STORAGE", "android.permission.ACCESS_FINE_LOCATION"};
+    private final Executor cameraExecutor = Executors.newSingleThreadExecutor();
+    private final Executor networkExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-    //GPSi leidmiseks vajalik
+    private static final int REQUEST_CODE_PERMISSIONS = 1001;
+    private static final String[] REQUIRED_PERMISSIONS = {
+        Manifest.permission.CAMERA,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    };
+
     private LocationManager locationManager;
-    private LocationListener listener;
-    //Koordinaadid
-    private Double myLatitude = 59.00;
-    private Double myLongitude = 27.73;
+    //https://kaine.ee/tram/minimal.php?x=675821.32&y=6466772.75
+    private volatile double myLatitude = 675821.32;
+    private volatile double myLongitude = 6466772.75;
 
     private TextView textView;
+    private volatile String locationOnRoad = "";
+    private volatile String locationOnRoadSimple = "";
 
-    public String locationOnRoad="";
-    public String locationOnRoadSimple="";
+    private PreviewView mPreviewView;
+    private ImageView captureImage;
 
-    PreviewView mPreviewView;
-    ImageView captureImage;
-    ImageView galleryImage;
+    private final Runnable updateTextViewRunnable = new Runnable() {
+        @Override
+        public void run() {
+            textView.setText(locationOnRoad + "\n" + myLatitude + ", " + myLongitude + "  " + getDate());
+            mainHandler.postDelayed(this, 1000);
+        }
+    };
 
-    @SuppressLint("WrongConstant")
+    private final LocationListener locationListener = new LocationListener() {
+        @Override
+        public void onLocationChanged(@NonNull Location location) {
+            double[] lest97 = wgs84ToLest97(location.getLatitude(), location.getLongitude());
+            myLatitude = lest97[0];
+            myLongitude = lest97[1];
+            loadRoadLocation(myLatitude, myLongitude);
+        }
+
+        @Override
+        public void onProviderDisabled(@NonNull String provider) {
+            startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+        }
+
+        @Override
+        public void onProviderEnabled(@NonNull String provider) {}
+
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {}
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        //NUPUD:
         mPreviewView = findViewById(R.id.previewView);
         captureImage = findViewById(R.id.captureImg);
-        galleryImage = findViewById(R.id.openGallery);
+        textView = findViewById(R.id.textView);
 
-        textView = (TextView) findViewById(R.id.textView);
-
-        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
-        listener = new LocationListener() {
-            @Override
-            public void onLocationChanged(Location location) {
-                myLatitude = roundCoordinate(location.getLatitude());
-                myLongitude = roundCoordinate(location.getLongitude());
-
-                WebLoaderAsyncTask getRoadLoc=new WebLoaderAsyncTask(myLatitude,myLongitude);
-                //System.out.println("TEST! KAS see ka töötab?");
-                //Paneme tööle tee asukoha saamise:
-                getRoadLoc.execute();
-            }
-
-            @Override
-            public void onStatusChanged(String s, int i, Bundle bundle) {
-
-            }
-
-            @Override
-            public void onProviderEnabled(String s) {
-
-            }
-
-            @Override
-            public void onProviderDisabled(String s) {
-                Intent i = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
-                startActivity(i);
-            }
-        };
-
+        locationManager = (LocationManager) getSystemService(LocationManager.class);
 
         if (allPermissionsGranted()) {
-            startCamera(); //start camera if permission has been granted by user
-
-            //START GPS:
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                // TODO: Consider calling
-                //    ActivityCompat#requestPermissions
-                // here to request the missing permissions, and then overriding
-                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                //                                          int[] grantResults)
-                // to handle the case where the user grants the permission. See the documentation
-                // for ActivityCompat#requestPermissions for more details.
-                return;
-            }
-            locationManager.requestLocationUpdates("gps", 2, 10, listener);
-
-
-            // See thread uuendab textviews koordinaate 1 seci tagant
-            Thread updateTextview = new Thread() {
-
-                @Override
-                public void run() {
-                    try {
-                        while (!isInterrupted()) {
-                            Thread.sleep(1000);
-                            runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    textView.setText(locationOnRoad + "\n" +myLatitude+", "+myLongitude+" "+getDate());
-                                    System.out.println("Updating textview:" + locationOnRoad);
-                                }
-                            });
-                        }
-                    } catch (InterruptedException e) {
-                    }
-                }
-            };
-            updateTextview.start();
-
-
+            startCameraAndGps();
         } else {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS);
         }
     }
 
-    //Koordinaatide ümardamine:
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mainHandler.post(updateTextViewRunnable);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        mainHandler.removeCallbacks(updateTextViewRunnable);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        locationManager.removeUpdates(locationListener);
+    }
+
+    @SuppressWarnings("MissingPermission")
+    private void startCameraAndGps() {
+        startCamera();
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 10, locationListener);
+    }
+
+    private void loadRoadLocation(double lat, double lon) {
+        networkExecutor.execute(() -> {
+            try {
+                //https://kaine.ee/tram/minimal.php?x=675821.32&y=6466772.75
+                String url = "https://kaine.ee/tram/minimal.php?x=" + lat + "&y=" + lon;
+                String content = fetchRoadPageContent(url);
+                String[] parsed = parseRoadData(content);
+                locationOnRoad = parsed[0];
+                locationOnRoadSimple = parsed[1];
+            } catch (IOException e) {
+                mainHandler.post(() ->
+                    Toast.makeText(MainActivity.this, "Internet puudub?", Toast.LENGTH_SHORT).show()
+                );
+            }
+        });
+    }
+
+    /*
+    private String[] parseRoadData(String content) {
+        String[] lines = content.split("\\r?\\n");
+        List<String> teeHtmlRaw = new ArrayList<>();
+        int meetrigaRida = 0;
+        boolean meetrigaRidaOlemas = false;
+        String kilomeeterPunktiga = "";
+
+        for (int i = 0; i < lines.length; i++) {
+            teeHtmlRaw.add(lines[i]);
+            if (lines[i].startsWith("Meeter")) {
+                meetrigaRida = i;
+                meetrigaRidaOlemas = true;
+            }
+        }
+
+        if (meetrigaRidaOlemas) {
+            String[] pooleks = teeHtmlRaw.get(meetrigaRida).split(",");
+            String meetritesStr = pooleks[0].replaceAll("[^0-9]+", "");
+            if (meetritesStr.matches(".*\\d.*")) {
+                float km = Float.parseFloat(meetritesStr) / 1000;
+                kilomeeterPunktiga = Float.toString(km).replace('.', ',');
+            }
+        }
+
+        String roadNumber = teeHtmlRaw.get(0).replaceAll("\\D+", "");
+        String roadName = teeHtmlRaw.get(0).replaceAll("\\d", "").replace("Tee  ", "");
+        String roadLocation = teeHtmlRaw.get(teeHtmlRaw.size() - 1);
+
+        return new String[]{
+            "Tee " + roadNumber + " km " + kilomeeterPunktiga + " " + roadName + " " + roadLocation,
+            "Tee " + roadNumber + " km " + kilomeeterPunktiga
+        };
+    }*/
+
+    private String[] parseRoadData(String content) {
+        String[] lines = content.split("\\r?\\n");
+        List<String> teeHtmlRaw = new ArrayList<>();
+        String infoRida = lines[0];
+        /*
+        int meetrigaRida = 0;
+        boolean meetrigaRidaOlemas = false;
+        String kilomeeterPunktiga = "";
+
+        for (int i = 0; i < lines.length; i++) {
+            teeHtmlRaw.add(lines[i]);
+            if (lines[i].startsWith("Meeter")) {
+                meetrigaRida = i;
+                meetrigaRidaOlemas = true;
+            }
+        }
+
+        if (meetrigaRidaOlemas) {
+            String[] pooleks = teeHtmlRaw.get(meetrigaRida).split(",");
+            String meetritesStr = pooleks[0].replaceAll("[^0-9]+", "");
+            if (meetritesStr.matches(".*\\d.*")) {
+                float km = Float.parseFloat(meetritesStr) / 1000;
+                kilomeeterPunktiga = Float.toString(km).replace('.', ',');
+            }
+        }
+
+        String roadNumber = teeHtmlRaw.get(0).replaceAll("\\D+", "");
+        String roadName = teeHtmlRaw.get(0).replaceAll("\\d", "").replace("Tee  ", "");
+        String roadLocation = teeHtmlRaw.get(teeHtmlRaw.size() - 1);
+
+        return new String[]{
+                "Tee " + roadNumber + " km " + kilomeeterPunktiga + " " + roadName + " " + roadLocation,
+                "Tee " + roadNumber + " km " + kilomeeterPunktiga
+        };
+        */
+        //return infoRida;
+        return new String[]{
+                infoRida,
+                "Tee " + "roadNumber" + " km " + "kilomeeterPunktiga"
+        };
+    }
+    private String fetchRoadPageContent(String url) throws IOException {
+        Document doc = Jsoup.connect(url)
+            .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .referrer("https://kaine.ee/tram")
+            .get();
+        String temp = doc.toString().replace("<br>", "$$$");
+        return Jsoup.parse(temp).body().text().replace("$$$", "\n");
+    }
+
+    // WGS84 → L-EST97 (EPSG:3301), Lambert Conformal Conic 2SP
+    // Input: WGS84 latitude/longitude in decimal degrees
+    // Output: [x, y] in L-EST97 metres
+    public static double[] wgs84ToLest97(double latDeg, double lonDeg) {
+        // GRS80 ellipsoid
+        double a  = 6378137.0;
+        double f  = 1.0 / 298.257222101;
+        double e2 = 2 * f - f * f;
+        double e  = Math.sqrt(e2);
+
+        // L-EST97 projection constants
+        double phi0    = Math.toRadians(57.0 + 31.0 / 60.0 + 3.194 / 3600.0); // lat of false origin
+        double lambda0 = Math.toRadians(24.0);                                  // central meridian
+        double phi1    = Math.toRadians(59.0 + 20.0 / 60.0);                   // standard parallel 1
+        double phi2    = Math.toRadians(58.0);                                  // standard parallel 2
+        double E0      = 500000.0;
+        double N0      = 6375000.0;
+
+        double m1 = Math.cos(phi1) / Math.sqrt(1 - e2 * Math.pow(Math.sin(phi1), 2));
+        double m2 = Math.cos(phi2) / Math.sqrt(1 - e2 * Math.pow(Math.sin(phi2), 2));
+        double t0 = lccT(phi0, e);
+        double t1 = lccT(phi1, e);
+        double t2 = lccT(phi2, e);
+
+        double n  = (Math.log(m1) - Math.log(m2)) / (Math.log(t1) - Math.log(t2));
+        double F  = m1 / (n * Math.pow(t1, n));
+        double r0 = a * F * Math.pow(t0, n);
+
+        double phi    = Math.toRadians(latDeg);
+        double lambda = Math.toRadians(lonDeg);
+        double t      = lccT(phi, e);
+        double r      = a * F * Math.pow(t, n);
+        double theta  = n * (lambda - lambda0);
+
+        return new double[]{
+            E0 + r * Math.sin(theta),
+            N0 + r0 - r * Math.cos(theta)
+        };
+    }
+
+    private static double lccT(double phi, double e) {
+        double sinPhi = Math.sin(phi);
+        return Math.tan(Math.PI / 4.0 - phi / 2.0) /
+            Math.pow((1 - e * sinPhi) / (1 + e * sinPhi), e / 2.0);
+    }
+
     public static double roundCoordinate(double coordinate) {
-        double longCoordinate = coordinate * 100000;
-        double roundedLongCoordinate = Math.round(longCoordinate);
-        double roundedCoordinate = roundedLongCoordinate / 100000;
-        return roundedCoordinate;
+        return Math.round(coordinate * 100000) / 100000.0;
     }
 
-    //Aeg stringina
-    public String getDate() {
-        Date cDate = new Date();
-        String fDate = new SimpleDateFormat("yyyy.MM.dd HH:mm:ss").format(cDate);
-        return fDate;
+    private String getDate() {
+        return new SimpleDateFormat("yyyy.MM.dd HH:mm:ss", Locale.getDefault()).format(new Date());
     }
 
-    //Kaamera käimapanekuks:
     private void startCamera() {
-
-        final ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
-
-        cameraProviderFuture.addListener(new Runnable() {
-            @Override
-            public void run() {
-                try {
-
-                    ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
-                    bindPreview(cameraProvider);
-
-                } catch (ExecutionException | InterruptedException e) {
-                    // No errors need to be handled for this Future.
-                    // This should never be reached.
-                }
+        ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
+        cameraProviderFuture.addListener(() -> {
+            try {
+                bindPreview(cameraProviderFuture.get());
+            } catch (ExecutionException | InterruptedException e) {
+                // unreachable
             }
         }, ContextCompat.getMainExecutor(this));
     }
 
-    void bindPreview(@NonNull ProcessCameraProvider cameraProvider) {
-
-        Preview preview = new Preview.Builder()
-                .build();
-
+    private void bindPreview(@NonNull ProcessCameraProvider cameraProvider) {
+        Preview preview = new Preview.Builder().build();
         CameraSelector cameraSelector = new CameraSelector.Builder()
-                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                .build();
-
-        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
-                .build();
-
-        ImageCapture.Builder builder = new ImageCapture.Builder();
-
-        //Vendor-Extensions (The CameraX extensions dependency in build.gradle)
-        HdrImageCaptureExtender hdrImageCaptureExtender = HdrImageCaptureExtender.create(builder);
-
-        // Query if extension is available (optional).
-        if (hdrImageCaptureExtender.isExtensionAvailable(cameraSelector)) {
-            // Enable the extension if available.
-            hdrImageCaptureExtender.enableExtension(cameraSelector);
-        }
-
-        final ImageCapture imageCapture = builder
-                .setTargetRotation(this.getWindowManager().getDefaultDisplay().getRotation())
-                .build();
-
-        //preview.setSurfaceProvider(mPreviewView.createSurfaceProvider());
+            .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+            .build();
+        ImageCapture imageCapture = new ImageCapture.Builder().build();
         preview.setSurfaceProvider(mPreviewView.getSurfaceProvider());
+        cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview, imageCapture);
 
-        Camera camera = cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview, imageAnalysis, imageCapture);
-
-        captureImage.setOnClickListener(v -> {
-
-            //SimpleDateFormat mDateFormat = new SimpleDateFormat("yyyyMMddHHmmss", Locale.US);
-            //File file = new File(getBatchDirectoryName(), mDateFormat.format(new Date()) + ".jpg");
-
-            //ImageCapture.OutputFileOptions outputFileOptions = new ImageCapture.OutputFileOptions.Builder(file).build();
-
-            imageCapture.takePicture(executor, new ImageCapture.OnImageCapturedCallback(){
-                public void onCaptureSuccess(ImageProxy image){
+        captureImage.setOnClickListener(v ->
+            imageCapture.takePicture(cameraExecutor, new ImageCapture.OnImageCapturedCallback() {
+                @Override
+                public void onCaptureSuccess(@NonNull ImageProxy image) {
                     Bitmap bitmap = convertImageProxyToBitmap(image);
-                    writeRoadDataAndTimeAndSave(bitmap);
+                    image.close();
+                    writeRoadDataAndSave(bitmap);
                 }
-            });
-
-        });
+            })
+        );
     }
 
-    //Failiasukoha jaoks:
-    public String getBatchDirectoryName() {
-
-        String app_folder_path = "";
-        app_folder_path = Environment.getExternalStorageDirectory().toString() + "/TeePilt";
-        File dir = new File(app_folder_path);
-        if (!dir.exists() && !dir.mkdirs()) {
-        }
-        return app_folder_path;
+    private File getSaveDirectory() {
+        File dir = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "TeePilt");
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
     }
 
-    //Convert ImageProxy to Bitmap
     private Bitmap convertImageProxyToBitmap(ImageProxy image) {
         ByteBuffer byteBuffer = image.getPlanes()[0].getBuffer();
         byteBuffer.rewind();
         byte[] bytes = new byte[byteBuffer.capacity()];
         byteBuffer.get(bytes);
-        byte[] clonedBytes = bytes.clone();
-        return BitmapFactory.decodeByteArray(clonedBytes, 0, clonedBytes.length);
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
     }
 
-    //TimeStampi panek ja teekilomeeter pildile:
-    public Bitmap writeRoadDataAndTimeAndSave(Bitmap toEdit){
+    private void writeRoadDataAndSave(Bitmap toEdit) {
         Bitmap dest = Bitmap.createBitmap(toEdit.getWidth(), toEdit.getHeight(), Bitmap.Config.ARGB_8888);
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-        String dateTime = sdf.format(Calendar.getInstance().getTime()); // reading local time in the system
-
         Canvas cs = new Canvas(dest);
         Paint tPaint = new Paint();
-
-        float textSize=toEdit.getHeight()/40;
-
-        //Kõrguse järgi muudan teksti suurust
+        float textSize = toEdit.getHeight() / 40f;
         tPaint.setTextSize(textSize);
         tPaint.setColor(Color.WHITE);
         tPaint.setStyle(Paint.Style.FILL);
         cs.drawBitmap(toEdit, 0f, 0f, null);
-        float height = tPaint.measureText("yY");
+        float lineHeight = tPaint.measureText("yY");
 
         Paint rectPaint = new Paint();
         rectPaint.setColor(Color.BLACK);
-        cs.drawRect(0,0,toEdit.getWidth(),2*height+15f+15f+15f,rectPaint);
+        cs.drawRect(0, 0, toEdit.getWidth(), 2 * lineHeight + 45f, rectPaint);
 
-        //Pildile teeasukoht, koordinaadid, kuupäev
-        cs.drawText(locationOnRoad, 20f, height+15f, tPaint);
-        cs.drawText(myLatitude+" / "+myLongitude+" / "+dateTime, 20f, height+15f+15f+height, tPaint);
+        String dateTime = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
+        cs.drawText(locationOnRoad, 20f, lineHeight + 15f, tPaint);
+        cs.drawText(myLatitude + " / " + myLongitude + " / " + dateTime, 20f, lineHeight + 30f + lineHeight, tPaint);
 
-        try {
-            SimpleDateFormat mDateFormat = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US);
-            String kuupaev=mDateFormat.format(new Date());
+        String filename = "IMG_" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date())
+            + " " + locationOnRoadSimple + ".jpg";
+        File outputFile = new File(getSaveDirectory(), filename);
 
-            String outputFilename=getBatchDirectoryName() + "/IMG_"+kuupaev+" "+locationOnRoadSimple+".jpg";
-
-            //dest.compress(Bitmap.CompressFormat.JPEG, 90, new FileOutputStream(new File(getBatchDirectoryName() + "/"+locationOnRoadSimple+" "+mDateFormat.format(new Date())+".jpg")));
-            dest.compress(Bitmap.CompressFormat.JPEG, 90, new FileOutputStream(new File(outputFilename)));
-            //Lets write a toast:
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                @Override
-                public void run() {
-                    Toast.makeText(MainActivity.this, "Salvestasin pildi: "+outputFilename, Toast.LENGTH_SHORT).show();
-                }
-            });
-        } catch (FileNotFoundException e) {
+        try (FileOutputStream fos = new FileOutputStream(outputFile)) {
+            dest.compress(Bitmap.CompressFormat.JPEG, 90, fos);
+            mainHandler.post(() ->
+                Toast.makeText(this, "Salvestasin pildi: " + outputFile.getPath(), Toast.LENGTH_SHORT).show()
+            );
+        } catch (IOException e) {
             e.printStackTrace();
-            return null;
         }
-        return dest;
     }
 
     private boolean allPermissionsGranted() {
-
         for (String permission : REQUIRED_PERMISSIONS) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 return false;
@@ -338,149 +391,14 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_CODE_PERMISSIONS) {
             if (allPermissionsGranted()) {
-                startCamera();
+                startCameraAndGps();
             } else {
                 Toast.makeText(this, "Permissions not granted by the user.", Toast.LENGTH_SHORT).show();
-                this.finish();
+                finish();
             }
-        }
-    }
-
-//
-//
-//WEBLOADER ASYNC TASK
-//
-
-    class WebLoaderAsyncTask extends AsyncTask<Void, Void, Void> {
-        // Koordinaatide saatmiseks asyntaskile.
-        private double latitude;
-        private double longitude;
-        private String result;
-
-        public WebLoaderAsyncTask(double param1, double param2) {
-            this.latitude = param1;
-            this.longitude = param2;
-        }
-
-        //HTMLi laadimiseks vajalik
-        String htmlPageUrl = "https://teed.jairus.ee/teed.php?k=58.312748,26.044717";
-        Document htmlDocument;
-        //    TextView parsedHtmlNode;
-        String htmlContentInStringFormat;
-
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-        }
-
-        @Override
-        protected Void doInBackground(Void... params) {
-            try {
-                htmlPageUrl = "https://teed.jairus.ee/teed.php?k="+myLatitude+","+myLongitude;
-                //Tõmbame veebilehe Stringiks:
-                htmlContentInStringFormat= getWebPageToString(htmlPageUrl);
-
-                //PLAAN
-                //Texti hulgast leida meetri rida.
-                //Võtta sealt meeter teisendada km-iks.
-
-                //Jupitame stringi vastavalt ridade vahetusele ära
-                String lines[] = htmlContentInStringFormat.split("\\r?\\n");
-
-                //Road data jaoks:
-                List<String> teeHtmlRaw = new ArrayList<>();
-
-                int meetrigaRida = 0;
-                boolean meetrigaRidaOlemas = false;
-                String kilomeeterPunktiga = "";
-
-                //Kõik jubinad kokku ühte arraylisti
-                for (int i = 0; i < lines.length; i++) {
-                    teeHtmlRaw.add(lines[i]);
-                    //Otsime meetri lause üles
-                    if (teeHtmlRaw.get(i).startsWith("Meeter")) {
-                        meetrigaRida = i;
-                        meetrigaRidaOlemas = true;
-                    }
-                }
-
-                //Kui meetriga rida on oleams, siis saab edasi hakkida stringe:
-                if (meetrigaRidaOlemas) {
-                    //Meetrid->number->kilomeetriteks
-                    String pooleks[] = teeHtmlRaw.get(meetrigaRida).split(","); //Meeter 5766, teljest 0m //koma kohalt pooleks
-                    String meetritesStr = pooleks[0].replaceAll("[^0-9]+", "");
-
-                    //meetritesStr-is on numbreid, siis teeme kilomeetriteks, kui põllul asume ei tee midagi.
-                    if (meetritesStr.matches(".*\\d.*")) {
-                        //Stringimeeter Floatiks ja arvutus, et saada km-id
-                        float meetritesFloat = Float.parseFloat(meetritesStr);
-                        float kilomeeterFloat = meetritesFloat / 1000;
-                        //Tagasi stringiks ja punkti vahetus koma vastu.
-                        String kilomeeterString = Float.toString(kilomeeterFloat);
-                        kilomeeterPunktiga = kilomeeterString.replace('.', ',');
-                    }
-                }
-
-                //Teenumbri saamiseks kustutame ära kõik, mis pole numbrid
-                String roadNumber = teeHtmlRaw.get(0).replaceAll("\\D+","");
-                //System.out.println("DEBUG Tee Number:" + roadNumber);
-                String roadName=teeHtmlRaw.get(0).replaceAll("\\d","").replace("Tee  ","");
-                //System.out.println("DEBUG Tee Number:" + roadName);
-
-                //TeeAsukoht
-                String roadLocation=teeHtmlRaw.get(teeHtmlRaw.size() - 1);
-                String roadKilometer=kilomeeterPunktiga;
-                //System.out.println("DEBUG Tee Number:" + roadKilometer);
-
-                //Valmis Tee nimed:
-                locationOnRoad="Tee "+roadNumber+" km "+roadKilometer+" "+roadName+" "+roadLocation;
-                locationOnRoadSimple="Tee "+roadNumber+" km "+roadKilometer;
-
-                //textView.setText(locationOnRoad + "\n" +myLatitude+", "+myLongitude+" "+getDate());
-
-            } catch (IOException e) {
-                e.printStackTrace();
-                new Handler(Looper.getMainLooper()).post(new Runnable() {
-                    @Override
-                    public void run() {
-                        Toast.makeText(MainActivity.this, "Internet puudub?", Toast.LENGTH_SHORT).show();
-                    }
-                });
-            }
-            return null;
-        }
-
-        protected void onPostExecute(String result) {
-            this.result = result;
-            //parsedHtmlNode.setText(htmlContentInStringFormat);
-            //System.out.println("DEBUG TEEKILOMEETER:" + htmlContentInStringFormat);
-            //Log.d("Teeasukoht: ",htmlContentInStringFormat);
-        }
-
-        //Lehe alla laadimiseks:
-        protected String getWebPageToString(String WebPage) throws IOException {
-            htmlPageUrl=WebPage;
-
-            //Üritame Lehte tõmmata
-            htmlDocument = Jsoup.connect(htmlPageUrl)
-                    .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36")
-                    .referrer("https://www.teed.jairus.ee")
-                    .get();
-
-            String htmlDocString = htmlDocument.toString();
-
-            //Asendame <br>id mingi muud märgiga
-            String temp = htmlDocString.replace("<br>", "$$$");
-            Document doc1 = Jsoup.parse(temp);
-
-            //Asendame märgid reavahetusega
-            String text = doc1.body().text().replace("$$$", "\n").toString();
-
-            //htmlContentInStringFormat = text;
-            return text;
         }
     }
 }

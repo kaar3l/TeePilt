@@ -2,9 +2,12 @@ package com.kaarel.teepilt;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
+import androidx.camera.core.FocusMeteringAction;
 import androidx.camera.core.ImageCapture;
 import androidx.camera.core.ImageProxy;
+import androidx.camera.core.MeteringPoint;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
@@ -13,8 +16,12 @@ import androidx.core.content.ContextCompat;
 import androidx.lifecycle.LifecycleOwner;
 
 import android.Manifest;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.MediaStore;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -28,6 +35,8 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -57,10 +66,9 @@ public class MainActivity extends AppCompatActivity {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private static final int REQUEST_CODE_PERMISSIONS = 1001;
-    private static final String[] REQUIRED_PERMISSIONS = {
-        Manifest.permission.CAMERA,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    };
+    private static final String[] REQUIRED_PERMISSIONS = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+        ? new String[]{Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.WRITE_EXTERNAL_STORAGE}
+        : new String[]{Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION};
 
     private LocationManager locationManager;
     //https://kaine.ee/tram/minimal.php?x=675821.32&y=6466772.75
@@ -73,11 +81,13 @@ public class MainActivity extends AppCompatActivity {
 
     private PreviewView mPreviewView;
     private ImageView captureImage;
+    private Camera camera;
+    private ScaleGestureDetector scaleGestureDetector;
 
     private final Runnable updateTextViewRunnable = new Runnable() {
         @Override
         public void run() {
-            textView.setText(locationOnRoad + "\n" + myLatitude + ", " + myLongitude + "  " + getDate());
+            textView.setText(locationOnRoad + "\n" + String.format(Locale.US, "%.2f, %.2f  ", myLatitude, myLongitude) +"/ "+ getDate());
             mainHandler.postDelayed(this, 1000);
         }
     };
@@ -111,6 +121,28 @@ public class MainActivity extends AppCompatActivity {
         mPreviewView = findViewById(R.id.previewView);
         captureImage = findViewById(R.id.captureImg);
         textView = findViewById(R.id.textView);
+
+        scaleGestureDetector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override
+            public boolean onScale(ScaleGestureDetector detector) {
+                if (camera == null) return false;
+                float currentZoom = camera.getCameraInfo().getZoomState().getValue() != null
+                    ? camera.getCameraInfo().getZoomState().getValue().getZoomRatio() : 1f;
+                camera.getCameraControl().setZoomRatio(currentZoom * detector.getScaleFactor());
+                return true;
+            }
+        });
+
+        mPreviewView.setOnTouchListener((v, event) -> {
+            scaleGestureDetector.onTouchEvent(event);
+            if (event.getAction() == MotionEvent.ACTION_UP && !scaleGestureDetector.isInProgress()) {
+                if (camera == null) return true;
+                MeteringPoint point = mPreviewView.getMeteringPointFactory().createPoint(event.getX(), event.getY());
+                FocusMeteringAction action = new FocusMeteringAction.Builder(point).build();
+                camera.getCameraControl().startFocusAndMetering(action);
+            }
+            return true;
+        });
 
         locationManager = (LocationManager) getSystemService(LocationManager.class);
 
@@ -319,7 +351,7 @@ public class MainActivity extends AppCompatActivity {
             .build();
         ImageCapture imageCapture = new ImageCapture.Builder().build();
         preview.setSurfaceProvider(mPreviewView.getSurfaceProvider());
-        cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview, imageCapture);
+        camera = cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview, imageCapture);
 
         captureImage.setOnClickListener(v ->
             imageCapture.takePicture(cameraExecutor, new ImageCapture.OnImageCapturedCallback() {
@@ -331,12 +363,6 @@ public class MainActivity extends AppCompatActivity {
                 }
             })
         );
-    }
-
-    private File getSaveDirectory() {
-        File dir = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "TeePilt");
-        if (!dir.exists()) dir.mkdirs();
-        return dir;
     }
 
     private Bitmap convertImageProxyToBitmap(ImageProxy image) {
@@ -364,19 +390,45 @@ public class MainActivity extends AppCompatActivity {
 
         String dateTime = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
         cs.drawText(locationOnRoad, 20f, lineHeight + 15f, tPaint);
-        cs.drawText(myLatitude + " / " + myLongitude + " / " + dateTime, 20f, lineHeight + 30f + lineHeight, tPaint);
+        cs.drawText(String.format(Locale.US, "%.2f / %.2f / %s", myLatitude, myLongitude, dateTime), 20f, lineHeight + 30f + lineHeight, tPaint);
 
         String filename = "IMG_" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date())
             + " " + locationOnRoadSimple + ".jpg";
-        File outputFile = new File(getSaveDirectory(), filename);
 
-        try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-            dest.compress(Bitmap.CompressFormat.JPEG, 90, fos);
-            mainHandler.post(() ->
-                Toast.makeText(this, "Salvestasin pildi: " + outputFile.getPath(), Toast.LENGTH_SHORT).show()
-            );
-        } catch (IOException e) {
-            e.printStackTrace();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, filename);
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+            values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_DCIM + "/TeePilt");
+            values.put(MediaStore.Images.Media.IS_PENDING, 1);
+
+            Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) return;
+
+            try (java.io.OutputStream os = getContentResolver().openOutputStream(uri)) {
+                dest.compress(Bitmap.CompressFormat.JPEG, 90, os);
+                values.clear();
+                values.put(MediaStore.Images.Media.IS_PENDING, 0);
+                getContentResolver().update(uri, values, null, null);
+                mainHandler.post(() ->
+                    Toast.makeText(this, "Salvestasin pildi: DCIM/TeePilt/" + filename, Toast.LENGTH_SHORT).show()
+                );
+            } catch (IOException e) {
+                getContentResolver().delete(uri, null, null);
+                e.printStackTrace();
+            }
+        } else {
+            File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "TeePilt");
+            if (!dir.exists()) dir.mkdirs();
+            File outputFile = new File(dir, filename);
+            try (FileOutputStream fos = new FileOutputStream(outputFile)) {
+                dest.compress(Bitmap.CompressFormat.JPEG, 90, fos);
+                mainHandler.post(() ->
+                    Toast.makeText(this, "Salvestasin pildi: " + outputFile.getPath(), Toast.LENGTH_SHORT).show()
+                );
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
